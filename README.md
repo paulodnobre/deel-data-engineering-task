@@ -24,14 +24,25 @@ Once you have the Database up and running feel free to connect to this using any
 - **Password**: `1234`
 - **Database**: `finance_db`
 
-If you opt-in to use CDC tools, we have the following pre-set configurations in the DB:
+### Debezium CDC
 
-- **CDC Username**: `cdc_user`
-- **CDC User Password**: `cdc_1234`
-- **Database**: `finance_db`
-- **Replication Slot**: `cdc_pgoutput`
-- **Publication Name**: `cdc_publication`
+The stack includes a Debezium CDC pipeline that streams database changes to Kafka in real-time. Kafka is available at `localhost:9092`.
+
+#### Topics
+
+| Kafka Topic | Source Table |
+|---|---|
+| `finance_db.operations.customers` | `operations.customers` |
+| `finance_db.operations.products` | `operations.products` |
+| `finance_db.operations.orders` | `operations.orders` |
+| `finance_db.operations.order_items` | `operations.order_items` |
+
+#### Kafka Connection Example
+
+```properties
+bootstrap.servers=localhost:9092
+```
 
 Extra informations and tips about the task execution can be found in the task description document shared by our recruiting team.
 
-For any questions, feel free to reach us out through data-platform@deel.com 
+For any questions, feel free to reach us out through data-platform@deel.com

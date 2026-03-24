@@ -56,8 +56,7 @@ alter table operations.order_items REPLICA IDENTITY FULL;
 
 -- Create CDC User
 
-CREATE ROLE cdc_replication REPLICATION LOGIN;
-CREATE USER cdc_user WITH ROLE cdc_replication PASSWORD 'cdc_1234';
+CREATE USER cdc_user REPLICATION LOGIN PASSWORD 'cdc_1234';
 
 -- Create Replication Slot
 SELECT pg_create_logical_replication_slot('cdc_pgoutput', 'pgoutput');
