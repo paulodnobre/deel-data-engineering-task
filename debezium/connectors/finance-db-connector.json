@@ -1,0 +1,24 @@
+{
+  "name": "finance-db-connector",
+  "config": {
+    "connector.class": "io.debezium.connector.postgresql.PostgresConnector",
+    "database.hostname": "transactions-db",
+    "database.port": "5432",
+    "database.user": "cdc_user",
+    "database.password": "cdc_1234",
+    "database.dbname": "finance_db",
+    "topic.prefix": "finance_db",
+    "schema.include.list": "operations",
+    "table.include.list": "operations.customers,operations.products,operations.orders,operations.order_items",
+    "slot.name": "cdc_pgoutput",
+    "publication.name": "cdc_publication",
+    "plugin.name": "pgoutput",
+    "publication.autocreate.mode": "all_tables",
+    "slot.drop.on.stop": "false",
+    "heartbeat.interval.ms": "10000",
+    "key.converter": "org.apache.kafka.connect.json.JsonConverter",
+    "key.converter.schemas.enable": "false",
+    "value.converter": "org.apache.kafka.connect.json.JsonConverter",
+    "value.converter.schemas.enable": "false"
+  }
+}
