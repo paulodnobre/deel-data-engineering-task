@@ -256,8 +256,6 @@ class TestBackfillCorrectness:
         1. Run backfill
         2. Query for any NULL values in critical columns
         3. Verify graceful handling (no crashes, NULL values allowed in optional columns)
-
-        Per Phase 1 audit: NULL columns documented in source schema.
         """
         setup_logging('INFO')
 
