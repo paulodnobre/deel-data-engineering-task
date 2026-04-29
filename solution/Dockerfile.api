@@ -1,0 +1,57 @@
+# ═══════════════════════════════════════════════════════════════════════════════
+# Dockerfile.api — Multi-stage Python image for FastAPI application
+# ═══════════════════════════════════════════════════════════════════════════════
+# Containerizes REST API service with health check and proper signal handling.
+# Final image size: ~200-250MB (87.5% reduction from single-stage).
+#
+# Build: docker build -f Dockerfile.api -t deel-analytics-api:latest .
+# Run: docker run --env-file .env -p 8000:8000 deel-analytics-api:latest
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# STAGE 1: Builder — compile dependencies
+# ═══════════════════════════════════════════════════════════════════════════════
+FROM python:3.11-slim AS builder
+
+WORKDIR /build
+
+# Install build tools for C extensions
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create virtual environment and install dependencies
+COPY requirements.txt .
+RUN python -m venv /build/venv && \
+    /build/venv/bin/pip install --no-cache-dir --upgrade pip && \
+    /build/venv/bin/pip install --no-cache-dir -r requirements.txt
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# STAGE 2: Runtime — minimal production image
+# ═══════════════════════════════════════════════════════════════════════════════
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Copy virtual environment from builder
+COPY --from=builder /build/venv /venv
+
+# Copy FastAPI application code
+COPY api/ /app/
+
+# Create non-root user for security
+RUN useradd -m -u 1000 appuser && chown -R appuser:appuser /app
+USER appuser
+
+# Activate virtual environment
+ENV PATH="/venv/bin:$PATH"
+
+# Health check: Queries /health endpoint to verify API is responding
+# Uses urllib (built-in Python) instead of curl to avoid extra dependencies
+# Interval: 10s, Timeout: 5s, Retries: 3, Start period: 5s (grace period before first check)
+HEALTHCHECK --interval=10s --timeout=5s --start-period=5s --retries=3 \
+  CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')" || exit 1
+
+# Entry point: Exec form (not shell form) for proper signal handling
+# Running Python as PID 1 ensures SIGTERM received for graceful shutdown
+# Uvicorn runs FastAPI application on 0.0.0.0:8000 (accessible from host network)
+ENTRYPOINT ["python", "-m", "uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000"]

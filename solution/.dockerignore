@@ -1,0 +1,55 @@
+# ═════════════════════════════════════════════════════════════════════════════
+# .dockerignore — Exclude files from Docker build context
+# ═════════════════════════════════════════════════════════════════════════════
+# Reduces build context size, speeds up builds, and prevents accidental inclusion
+# of secrets and development artifacts.
+
+# Python cache
+__pycache__
+*.pyc
+*.pyo
+*.egg-info
+
+# Virtual environments
+venv/
+.venv/
+env/
+
+# Testing
+.pytest_cache
+.coverage
+
+# Git
+.git
+.gitignore
+.gitattributes
+
+# Environment files (secrets)
+.env
+.env.local
+.env.*.local
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build artifacts
+dist/
+build/
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+*~
+
+# Development
+.pytest_cache
+.mypy_cache
+.ruff_cache
+
+# Docker (prevent recursive build context)
+Dockerfile*
+docker-compose*.yml
+.dockerignore

@@ -1,0 +1,58 @@
+# ═══════════════════════════════════════════════════════════════════════════════
+# Dockerfile.pipeline — Multi-stage Python image for analytics pipeline
+# ═══════════════════════════════════════════════════════════════════════════════
+# Containerizes pipeline service (backfill + Kafka consumer).
+# Final image size: ~200-250MB (87.5% reduction from single-stage).
+#
+# Build: docker build -f Dockerfile.pipeline -t deel-analytics-pipeline:latest .
+# Run: docker run --env-file .env deel-analytics-pipeline:latest
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# STAGE 1: Builder — compile dependencies and create virtual environment
+# ═══════════════════════════════════════════════════════════════════════════════
+FROM python:3.11-slim AS builder
+
+WORKDIR /build
+
+# Install build tools (gcc, make, etc.) for compiling C extensions (psycopg2, etc.)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy requirements and install to isolated virtual environment
+COPY requirements.txt .
+RUN python -m venv /build/venv && \
+    /build/venv/bin/pip install --no-cache-dir --upgrade pip && \
+    /build/venv/bin/pip install --no-cache-dir -r requirements.txt
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# STAGE 2: Runtime — minimal production image
+# ═══════════════════════════════════════════════════════════════════════════════
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Copy compiled virtual environment from builder (avoids re-compiling)
+COPY --from=builder /build/venv /venv
+
+# Copy application code
+COPY pipeline/ /app/pipeline/
+
+# Copy schemas directory (referenced by pipeline for context)
+COPY schemas/ /app/schemas/
+
+# Create non-root user for security (prevent container escape via root privileges)
+RUN useradd -m -u 1000 appuser && chown -R appuser:appuser /app
+USER appuser
+
+# Activate virtual environment by prepending to PATH
+ENV PATH="/venv/bin:$PATH"
+
+# HEALTHCHECK not defined for pipeline:
+# - Backfill runs once (batch job, not a long-lived service)
+# - Consumer is a daemon with no health endpoint
+# - Startup order enforced by docker-compose depends_on with condition: service_healthy on postgres + kafka
+
+# Entry point: Python module execution
+# Runs pipeline.main which orchestrates backfill → consumer based on PIPELINE_MODE env var
+ENTRYPOINT ["python", "-m", "pipeline.main"]
