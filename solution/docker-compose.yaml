@@ -2,6 +2,7 @@ services:
   transactions-db:
     build:
       context: ./docker/postgres-db
+    container_name: deel-postgres
     environment:
       - POSTGRES_USER=finance_db_user
       - POSTGRES_PASSWORD=1234
@@ -12,19 +13,47 @@ services:
     ports:
       - "5432:5432"
     command: ["postgres", "-c", "wal_level=logical", "-c", "hot_standby=on"]
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "finance_db_user", "-d", "finance_db"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    networks:
+      - analytics
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   zookeeper:
     image: confluentinc/cp-zookeeper:7.5.0
+    container_name: deel-zookeeper
     environment:
       ZOOKEEPER_CLIENT_PORT: 2181
       ZOOKEEPER_TICK_TIME: 2000
     ports:
       - "2181:2181"
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "2181"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - analytics
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   kafka:
     image: confluentinc/cp-kafka:7.5.0
+    container_name: deel-kafka
     depends_on:
-      - zookeeper
+      zookeeper:
+        condition: service_healthy
     environment:
       KAFKA_BROKER_ID: 1
       KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
@@ -36,12 +65,28 @@ services:
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
     ports:
       - "9092:9092"
+      - "29092:29092"
+    healthcheck:
+      test: ["CMD", "kafka-broker-api-versions.sh", "--bootstrap-server", "kafka:29092"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - analytics
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   kafka-connect:
     image: debezium/connect:2.4
+    container_name: deel-kafka-connect
     depends_on:
-      - kafka
-      - transactions-db
+      kafka:
+        condition: service_healthy
+      transactions-db:
+        condition: service_healthy
     environment:
       BOOTSTRAP_SERVERS: kafka:29092
       GROUP_ID: 1
@@ -53,9 +98,17 @@ services:
       STATUS_STORAGE_REPLICATION_FACTOR: 1
     ports:
       - "8083:8083"
+    networks:
+      - analytics
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   debezium-init:
     image: curlimages/curl:latest
+    container_name: deel-debezium-init
     depends_on:
       - kafka-connect
     volumes:
@@ -63,6 +116,67 @@ services:
       - "${PWD}/debezium/connectors:/connectors"
     entrypoint: ["/bin/sh", "/init-connectors.sh"]
     restart: "no"
+    networks:
+      - analytics
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  pipeline:
+    build:
+      context: .
+      dockerfile: Dockerfile.pipeline
+    container_name: deel-pipeline
+    depends_on:
+      transactions-db:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    environment:
+      POSTGRES_SOURCE_URL: postgresql://finance_db_user:1234@transactions-db:5432/finance_db
+      POSTGRES_ANALYTICS_URL: postgresql://finance_db_user:1234@transactions-db:5432/finance_db
+      KAFKA_BROKERS: kafka:29092
+      BATCH_SIZE: 1000
+      DB_POOL_MIN_CONNECTIONS: 1
+      DB_POOL_MAX_CONNECTIONS: 5
+      LOG_LEVEL: INFO
+      PIPELINE_MODE: backfill-then-stream
+    restart: on-failure
+    volumes:
+      - ./pipeline:/app/pipeline:ro
+    networks:
+      - analytics
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    container_name: deel-api
+    depends_on:
+      pipeline:
+        condition: service_started
+    environment:
+      POSTGRES_ANALYTICS_URL: postgresql://finance_db_user:1234@transactions-db:5432/finance_db
+      LOG_LEVEL: INFO
+    ports:
+      - "8000:8000"
+    restart: on-failure
+    volumes:
+      - ./api:/app/api:ro
+    networks:
+      - analytics
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
 volumes:
   pg-data:
